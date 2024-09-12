@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CESAR CARONA</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+    <style>
+      body {
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+      }
+      #map {
+        height: 100vh;
+        width: 100%;
+      }
+      .controls-container {
+        position: absolute;
+        top: 10px;
+        left: 55px;
+        z-index: 1000;
+        background-color: white;
+        padding: 15px;
+        border-radius: 5px;
+        box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls-container">
+      <h4>CESAR CARONA</h4>
+      <div class="form-group">
+        <label for="startAddress">De: </label>
+        <input type="text" class="form-control" id="startAddress" placeholder="Ex: CESAR Recife" />
+      </div>
+      <div class="form-group">
+        <label for="endAddress">Para: </label>
+        <input type="text" class="form-control" id="endAddress" placeholder="Ex: Olinda" />
+      </div>
+      <div class="form-group">
+        <label for="nomeCarona">Por: </label>
+        <input type="text" class="form-control" id="nomeCarona" placeholder="Ex: Ednaldo Pereira" />
+      </div>
+      <div class="form-group">
+        <label for="horarioCarona">Hora de saída: </label>
+        <input type="text" class="form-control" id="horarioCarona" placeholder="Ex: 16:00" />
+      </div>
+      <button id="addRoute" class="btn btn-primary btn-block">Adicionar rota</button>
+      <br />
+      <div class="form-group">
+        <label for="addressSelect">Selecionar rota</label>
+        <select id="addressSelect" class="form-control">
+          <option value="">Selecione uma rota</option>
+        </select>
+      </div>
+      <button id="showRoute" class="btn btn-success btn-block">Mostrar rota</button>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Modais -->
+    <div
+      class="modal fade"
+      id="errorModal"
+      tabindex="-1"
+      role="alert"
+      aria-labelledby="errorModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="errorModalLabel">Eita...Algo aconteceu.</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body" id="errorModalBody">
+            <!-- Mensagem de erro vai aqui -->
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" data-dismiss="modal">Fechar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="infoModal"
+      tabindex="-1"
+      role="alert"
+      aria-labelledby="infoModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog" role="alert">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="infoModalLabel">Informação</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body" id="infoModalBody">
+            <!-- Mensagem de informação vai aqui -->
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" data-dismiss="modal">Fechar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+      // Coordenadas do CESAR Recife
+      const cesarRecifeCoords = [-8.0527, -34.8772];
+      const API = "https://66e22ff7c831c8811b575813.mockapi.io/carona/obter";
+      const map = L.map("map").setView(cesarRecifeCoords, 13);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      let currentMarkers = [];
+      let timeoutId = null;
+      let name = "";
+      let time = "";
+      const registeredRoutes = [];
+      let lastAddedIndex = null;
+
+      async function geocodeAddress(address) {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            address
+          )}&bounded=1&viewbox=-35.3000,-8.2600,-34.7000,-7.6000`
+        );
+        const data = await response.json();
+        if (data.length > 0) {
+          const { lat, lon } = data[0];
+          return [parseFloat(lat), parseFloat(lon)];
+        } else {
+          showErrorModal("Endereço não encontrado: " + address);
+          return null;
+        }
+      }
+
+      function showErrorModal(message) {
+        document.getElementById("errorModalBody").textContent = message;
+        $("#errorModal").modal("show");
+      }
+
+      function showInfoModal(message) {
+        document.getElementById("infoModalBody").textContent = message;
+        $("#infoModal").modal("show");
+      }
+
+      document.getElementById("addRoute").addEventListener("click", async () => {
+        const startAddress = document.getElementById("startAddress").value;
+        const endAddress = document.getElementById("endAddress").value;
+        const doadorName = document.getElementById("nomeCarona").value;
+        const horarioCarona = document.getElementById("horarioCarona").value;
+
+        if (startAddress && endAddress && doadorName && horarioCarona) {
+          const startCoords = await geocodeAddress(startAddress);
+          const endCoords = await geocodeAddress(endAddress);
+
+          if (startCoords && endCoords) {
+            if (isNaN(startCoords[0]) || isNaN(startCoords[1]) || isNaN(endCoords[0]) || isNaN(endCoords[1])) {
+              showErrorModal("Valores inválidos. Tente novamente.");
+              return;
+            }
+
+            lastAddedIndex = registeredRoutes.length;
+            registeredRoutes.push({
+              startAddress,
+              endAddress,
+              nomeCarona: doadorName,
+              startCoords,
+              endCoords,
+              endPartida: startAddress,
+              endFinal: endAddress,
+              horarioCarona,
+            });
+
+            updateSelectOptions();
+
+            await fetch(API, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                inicio: { lat: startCoords[0], lng: startCoords[1] },
+                fim: { lat: endCoords[0], lng: endCoords[1] },
+                nomeCarona: doadorName,
+                endPartida: startAddress,
+                endFinal: endAddress,
+                horarioCarona,
+              }),
+            });
+
+            showInfoModal("Carona adicionada com sucesso!");
+
+            document.getElementById("startAddress").value = "";
+            document.getElementById("endAddress").value = "";
+            document.getElementById("nomeCarona").value = "";
+            document.getElementById("horarioCarona").value = "";
+          } else {
+            showErrorModal(
+              "Um ou ambos os endereços não puderam ser encontrados. Verifique as informações e tente novamente."
+            );
+          }
+        } else {
+          showErrorModal("Por favor, insira todos os campos.");
+        }
+      });
+
+      function updateSelectOptions() {
+        const select = document.getElementById("addressSelect");
+        select.innerHTML = '<option value="">Selecione uma rota</option>';
+        registeredRoutes.forEach((route, index) => {
+          const option = document.createElement("option");
+          option.value = index;
+          option.text = `De: ${route.endPartida} | Para: ${route.endFinal} | Por: ${route.nomeCarona} | Previsão de saída: ${route.horarioCarona}`;
+          select.appendChild(option);
+        });
+      }
+
+      async function addMarkers(startCoords, endCoords) {
+        clearTimeout(timeoutId);
+        removeMarkers();
+
+        if (startCoords && endCoords) {
+          if (isNaN(startCoords[0]) || isNaN(startCoords[1]) || isNaN(endCoords[0]) || isNaN(endCoords[1])) {
+            showErrorModal("Coordenadas inválidas para exibição no mapa.");
+            return;
+          }
+
+          const startMarker = L.marker(startCoords)
+            .addTo(map)
+            .bindPopup(`Inicio da rota: Responsável: ${name} - Horário de saída: ${time}`)
+            .openPopup();
+          currentMarkers.push(startMarker);
+
+          const endMarker = L.marker(endCoords)
+            .addTo(map)
+            .bindPopup(`Fim da rota: Responsável: ${name} - Horário de saída: ${time}`);
+          currentMarkers.push(endMarker);
+
+          const bounds = L.latLngBounds(startCoords, endCoords);
+          map.fitBounds(bounds);
+
+          timeoutId = setTimeout(() => {
+            removeMarkers();
+          }, 60000);
+        }
+      }
+
+      function removeMarkers() {
+        currentMarkers.forEach((marker) => {
+          map.removeLayer(marker);
+        });
+        currentMarkers = [];
+      }
+
+      document.getElementById("showRoute").addEventListener("click", function () {
+        const selectedRouteIndex = document.getElementById("addressSelect").value;
+        if (selectedRouteIndex !== "") {
+          const { startCoords, endCoords, nomeCarona, horarioCarona } = registeredRoutes[selectedRouteIndex];
+          name = nomeCarona;
+          time = horarioCarona;
+          addMarkers(startCoords, endCoords);
+        } else {
+          showErrorModal("Por favor, selecione uma rota.");
+        }
+      });
+
+      async function loadRoutes() {
+        try {
+          const response = await fetch(API);
+          const data = await response.json();
+
+          registeredRoutes.length = 0;
+          updateSelectOptions();
+
+          data.forEach((route) => {
+            registeredRoutes.push({
+              startAddress: route.endPartida,
+              endAddress: route.endFinal,
+              nomeCarona: route.nomeCarona,
+              startCoords: [parseFloat(route.inicio.lat), parseFloat(route.inicio.lng)],
+              endCoords: [parseFloat(route.fim.lat), parseFloat(route.fim.lng)],
+              endPartida: route.endPartida,
+              endFinal: route.endFinal,
+              horarioCarona: route.horarioCarona,
+            });
+          });
+
+          updateSelectOptions();
+        } catch (error) {
+          showErrorModal("Erro ao carregar as rotas: " + error.message);
+        }
+      }
+
+      window.onload = loadRoutes;
+    </script>
+  </body>
+</html>
