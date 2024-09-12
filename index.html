@@ -25,6 +25,10 @@
         border-radius: 5px;
         box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
       }
+
+      select option {
+        padding: 30px;
+      }
     </style>
   </head>
   <body>
@@ -51,7 +55,7 @@
       <div class="form-group">
         <label for="addressSelect">Selecionar rota</label>
         <select id="addressSelect" class="form-control">
-          <option value="">Selecione uma rota</option>
+          <option value="">Selecione uma carona</option>
         </select>
       </div>
       <button id="showRoute" class="btn btn-success btn-block">Mostrar rota</button>
@@ -117,7 +121,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script>
-      // Coordenadas do CESAR Recife
       const cesarRecifeCoords = [-8.0527, -34.8772];
       const API = "https://66e22ff7c831c8811b575813.mockapi.io/carona/obter";
       const map = L.map("map").setView(cesarRecifeCoords, 13);
@@ -130,6 +133,8 @@
       let timeoutId = null;
       let name = "";
       let time = "";
+      let adressStart = "";
+      let adressFinal = "";
       const registeredRoutes = [];
       let lastAddedIndex = null;
 
@@ -176,6 +181,7 @@
             }
 
             lastAddedIndex = registeredRoutes.length;
+            const currentDate = new Date().toISOString(); // Data e hora atuais
             registeredRoutes.push({
               startAddress,
               endAddress,
@@ -185,6 +191,7 @@
               endPartida: startAddress,
               endFinal: endAddress,
               horarioCarona,
+              createdAt: currentDate, // Adiciona a data de criação
             });
 
             updateSelectOptions();
@@ -199,6 +206,7 @@
                 endPartida: startAddress,
                 endFinal: endAddress,
                 horarioCarona,
+                createdAt: currentDate, // Envia a data de criação
               }),
             });
 
@@ -220,12 +228,29 @@
 
       function updateSelectOptions() {
         const select = document.getElementById("addressSelect");
-        select.innerHTML = '<option value="">Selecione uma rota</option>';
-        registeredRoutes.forEach((route, index) => {
-          const option = document.createElement("option");
-          option.value = index;
-          option.text = `De: ${route.endPartida} | Para: ${route.endFinal} | Por: ${route.nomeCarona} | Previsão de saída: ${route.horarioCarona}`;
-          select.appendChild(option);
+        select.innerHTML = '<option value="">Selecione uma carona</option>';
+
+        // Agrupa rotas por data
+        const routesByDate = registeredRoutes.reduce((acc, route) => {
+          const date = new Date(route.createdAt).toLocaleDateString();
+          if (!acc[date]) {
+            acc[date] = [];
+          }
+          acc[date].push(route);
+          return acc;
+        }, {});
+
+        // Adiciona opções ao select
+        Object.keys(routesByDate).forEach((date) => {
+          const optgroup = document.createElement("optgroup");
+          optgroup.label = `Data da Carona: ${date}`;
+          routesByDate[date].forEach((route, index) => {
+            const option = document.createElement("option");
+            option.value = registeredRoutes.indexOf(route);
+            option.text = `De: ${route.endPartida} | Para: ${route.endFinal} | Por: ${route.nomeCarona} | Saída: ${route.horarioCarona}`;
+            optgroup.appendChild(option);
+          });
+          select.appendChild(optgroup);
         });
       }
 
@@ -238,16 +263,13 @@
             showErrorModal("Coordenadas inválidas para exibição no mapa.");
             return;
           }
+          const labelPopUp = `${adressStart} - ${adressFinal} | Por: ${name} - Horário de saída: ${time}`;
 
-          const startMarker = L.marker(startCoords)
-            .addTo(map)
-            .bindPopup(`Inicio da rota: Responsável: ${name} - Horário de saída: ${time}`)
-            .openPopup();
+          const startMarker = L.marker(startCoords).addTo(map).bindPopup(`${labelPopUp}`).openPopup();
           currentMarkers.push(startMarker);
 
-          const endMarker = L.marker(endCoords)
-            .addTo(map)
-            .bindPopup(`Fim da rota: Responsável: ${name} - Horário de saída: ${time}`);
+          const endMarker = L.marker(endCoords).addTo(map).bindPopup(`${labelPopUp}`);
+
           currentMarkers.push(endMarker);
 
           const bounds = L.latLngBounds(startCoords, endCoords);
@@ -269,9 +291,12 @@
       document.getElementById("showRoute").addEventListener("click", function () {
         const selectedRouteIndex = document.getElementById("addressSelect").value;
         if (selectedRouteIndex !== "") {
-          const { startCoords, endCoords, nomeCarona, horarioCarona } = registeredRoutes[selectedRouteIndex];
+          const { startCoords, endCoords, nomeCarona, horarioCarona, endPartida, endFinal } =
+            registeredRoutes[selectedRouteIndex];
           name = nomeCarona;
           time = horarioCarona;
+          adressStart = endPartida;
+          adressFinal = endFinal;
           addMarkers(startCoords, endCoords);
         } else {
           showErrorModal("Por favor, selecione uma rota.");
@@ -296,6 +321,7 @@
               endPartida: route.endPartida,
               endFinal: route.endFinal,
               horarioCarona: route.horarioCarona,
+              createdAt: route.createdAt, // Adiciona a data de criação
             });
           });
 
