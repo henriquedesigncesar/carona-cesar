@@ -254,32 +254,64 @@
         });
       }
 
-      async function addMarkers(startCoords, endCoords) {
-        clearTimeout(timeoutId);
-        removeMarkers();
+// Função para adicionar marcadores e rota com animação
+async function addMarkers(startCoords, endCoords) {
+  clearTimeout(timeoutId);
+  removeMarkers();
 
-        if (startCoords && endCoords) {
-          if (isNaN(startCoords[0]) || isNaN(startCoords[1]) || isNaN(endCoords[0]) || isNaN(endCoords[1])) {
-            showErrorModal("Coordenadas inválidas para exibição no mapa.");
-            return;
-          }
-          const labelPopUp = `${adressStart} - ${adressFinal} | Por: ${name} - Horário de saída: ${time}`;
+  if (startCoords && endCoords) {
+    if (isNaN(startCoords[0]) || isNaN(startCoords[1]) || isNaN(endCoords[0]) || isNaN(endCoords[1])) {
+      showErrorModal("Coordenadas inválidas para exibição no mapa.");
+      return;
+    }
 
-          const startMarker = L.marker(startCoords).addTo(map).bindPopup(`${labelPopUp}`).openPopup();
-          currentMarkers.push(startMarker);
+    // Cria uma rota com a máquina de roteamento
+    const routeControl = L.Routing.control({
+      waypoints: [
+        L.latLng(startCoords[0], startCoords[1]),
+        L.latLng(endCoords[0], endCoords[1])
+      ],
+      createMarker: () => null, // Não criar marcadores nos waypoints
+      routeWhileDragging: true,
+      router: L.Routing.osrmv1() // Usando OSRM
+    }).addTo(map);
 
-          const endMarker = L.marker(endCoords).addTo(map).bindPopup(`${labelPopUp}`);
+    routeControl.on('routesfound', function (e) {
+      const route = e.routes[0].coordinates;
 
-          currentMarkers.push(endMarker);
+      // Adiciona a linha da rota ao mapa
+      const polyline = L.polyline(route, { color: 'blue' }).addTo(map);
 
-          const bounds = L.latLngBounds(startCoords, endCoords);
-          map.fitBounds(bounds);
+      // Animação do marcador ao longo da linha
+      let marker = L.marker(route[0]).addTo(map);
+      let i = 0;
 
-          timeoutId = setTimeout(() => {
-            removeMarkers();
-          }, 60000);
+      function animateMarker() {
+        if (i < route.length) {
+          marker.setLatLng(route[i]);
+          i++;
+          setTimeout(animateMarker, 100); // Velocidade da animação
         }
       }
+
+      animateMarker();
+    });
+
+    const labelPopUp = ${adressStart} - ${adressFinal} | Por: ${name} - Horário de saída: ${time};
+    const startMarker = L.marker(startCoords).addTo(map).bindPopup(${labelPopUp}).openPopup();
+    currentMarkers.push(startMarker);
+
+    const endMarker = L.marker(endCoords).addTo(map).bindPopup(${labelPopUp});
+    currentMarkers.push(endMarker);
+
+    const bounds = L.latLngBounds(startCoords, endCoords);
+    map.fitBounds(bounds);
+
+    timeoutId = setTimeout(() => {
+      removeMarkers();
+    }, 60000);
+  }
+}
 
       function removeMarkers() {
         currentMarkers.forEach((marker) => {
